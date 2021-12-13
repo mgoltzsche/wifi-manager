@@ -1,0 +1,48 @@
+# DOES NOT WORK!
+# The binary produced with rust:1.57-alpine3.14 is broken (not found) on arm64 for some reason (although it runs amd64)
+FROM rust:1.57-alpine3.14 AS src
+RUN apk add --update --no-cache git
+#FROM rust:1.57-slim-buster AS src
+#RUN apt-get update && apt-get install -y git
+ARG VERSION=v4.4.6
+RUN git clone --branch=$VERSION --depth=1 https://github.com/balena-os/wifi-connect.git /wifi-connect && rm /wifi-connect/Cargo.lock
+WORKDIR /wifi-connect
+
+FROM src AS server
+RUN apk add --update --no-cache dbus-dev dbus-libs musl-dev
+# The following line is to fix https://github.com/nix-rust/nix/issues/951
+RUN sed -Ei 's/^nix = "0.10"/nix = "0.23"/' Cargo.toml
+RUN cargo fetch
+#RUN apt-get install -y librust-dbus-dev musl-dev musl-tools
+#ENV RUSTFLAGS="-C link-arg=-s"
+RUN cargo build --release
+#RUN set -eux; \
+#	RUSTARCH=`uname -m`; \
+#	ls -la /usr/lib/${RUSTARCH}-linux-musl; \
+#	export PKG_CONFIG_LIBDIR=/usr/lib/${RUSTARCH}-linux-musl; \
+#	rustup target add ${RUSTARCH}-unknown-linux-musl; \
+#	cargo build --release --target=${RUSTARCH}-unknown-linux-musl; \
+#	mv target/${RUSTARCH}-unknown-linux-musl/release/wifi-connect target/release/wifi-connect
+RUN /wifi-connect/target/release/wifi-connect --help
+
+FROM node:17.2-alpine3.14 AS webui
+COPY --from=src /wifi-connect /wifi-connect
+WORKDIR /wifi-connect/ui
+RUN npm install
+ENV NODE_OPTIONS=--openssl-legacy-provider
+RUN npm run build
+
+FROM alpine:3.14
+RUN apk add --update --no-cache dnsmasq wireless-tools dbus-libs binutils
+#ARG VERSION="4.4.0"
+#RUN set -eux; \
+#	ARCH=`uname -m | sed 's/x86_64/amd64/'`; \
+#	mkdir /usr/src/wifi-connect; \
+#	wget -O - "https://github.com/balena-io/wifi-connect/releases/download/v$VERSION/wifi-connect-v$VERSION-linux-$ARCH.tar.gz" \
+#		| tar -xvz -C  /usr/src/wifi-connect
+COPY --from=webui /wifi-connect/ui/build /usr/local/lib/wifi-connect/web
+COPY --from=server /wifi-connect/target/release/wifi-connect /usr/local/bin/wifi-connect
+ENV DBUS_SYSTEM_BUS_ADDRESS=unix:path=/host/run/dbus/system_bus_socket \
+    UI_DIRECTORY=/usr/local/lib/wifi-connect/web
+COPY entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]

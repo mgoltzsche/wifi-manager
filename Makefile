@@ -1,6 +1,6 @@
 PLATFORM ?= linux/amd64
 
-IMAGE_BUILD_OPTS = -t mgoltzsche/wifi-manager:dev
+IMAGE_BUILD_OPTS = -t docker.io/mgoltzsche/wifi-manager:dev
 
 BUILDX_BUILDER ?= wifi-manager-builder
 BUILDX_OUTPUT ?= type=docker
@@ -11,7 +11,7 @@ DOCKER_COMPOSE ?= docker-compose
 all: image
 
 image:
-	$(DOCKER) build -t mgoltzsche/wifi-manager:dev .
+	$(DOCKER) build $(IMAGE_BUILD_OPTS) wifi-connect
 
 buildx: create-builder
 	$(DOCKER) buildx build -f Dockerfile $(BUILDX_OPTS) --force-rm $(IMAGE_BUILD_OPTS) .
@@ -23,7 +23,7 @@ delete-builder:
 	$(DOCKER) buildx rm $(BUILDX_BUILDER)
 
 compose-up:
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up -d --build
 
 compose-down:
 	$(DOCKER_COMPOSE) down -v --remove-orphans
